@@ -1,0 +1,167 @@
+apiVersion: 1
+groups:
+  - orgId: 1
+    name: dnp3
+    folder: DNP3
+    interval: 1m
+    rules:
+      - uid: dnp3-coleta-parada
+        title: "Coleta DNP3 parada"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: {from: 600, to: 0}
+            datasourceUid: clickhouse
+            model: {"refId": "A", "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse"}, "editorType": "sql", "format": 1, "queryType": "table", "rawSql": "SELECT toFloat64(count()) AS n FROM dnp3.rtu_stats_1m WHERE minute > now() - INTERVAL 4 MINUTE"}
+          - refId: B
+            datasourceUid: __expr__
+            model: {"refId": "B", "type": "reduce", "expression": "A", "reducer": "last", "datasource": {"type": "__expr__", "uid": "__expr__"}}
+          - refId: C
+            datasourceUid: __expr__
+            model: {"refId": "C", "type": "threshold", "expression": "B", "datasource": {"type": "__expr__", "uid": "__expr__"}, "conditions": [{"evaluator": {"type": "lt", "params": [1]}}]}
+        noDataState: Alerting
+        execErrState: Error
+        for: 0s
+        labels: {severity: critical, origem: dnp3mon}
+        annotations: {summary: "O dnp3mon não grava indicadores há mais de 3 minutos (captura, decodificador ou banco parado)."}
+        isPaused: false
+      - uid: dnp3-rtu-offline
+        title: "RTU sem comunicação"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: {from: 600, to: 0}
+            datasourceUid: clickhouse
+            model: {"refId": "A", "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse"}, "editorType": "sql", "format": 1, "queryType": "table", "rawSql": "SELECT rtu, toFloat64(1) AS offline FROM dnp3.rtu_stats_1m WHERE minute > now() - INTERVAL 4 MINUTE GROUP BY rtu HAVING argMax(online, minute) = 0"}
+          - refId: B
+            datasourceUid: __expr__
+            model: {"refId": "B", "type": "reduce", "expression": "A", "reducer": "last", "datasource": {"type": "__expr__", "uid": "__expr__"}}
+          - refId: C
+            datasourceUid: __expr__
+            model: {"refId": "C", "type": "threshold", "expression": "B", "datasource": {"type": "__expr__", "uid": "__expr__"}, "conditions": [{"evaluator": {"type": "gt", "params": [0]}}]}
+        noDataState: OK
+        execErrState: Error
+        for: 2m
+        labels: {severity: critical, origem: dnp3mon}
+        annotations: {summary: "RTU {{ $labels.rtu }} sem quadros DNP3 válidos (timeouts consecutivos ou silêncio)."}
+        isPaused: false
+      - uid: dnp3-queda-massiva
+        title: "Queda em massa de RTUs"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: {from: 600, to: 0}
+            datasourceUid: clickhouse
+            model: {"refId": "A", "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse"}, "editorType": "sql", "format": 1, "queryType": "table", "rawSql": "SELECT toFloat64(uniqExact(rtu)) AS n FROM dnp3.events WHERE ts > now() - INTERVAL 5 MINUTE AND event = 'comm_lost'"}
+          - refId: B
+            datasourceUid: __expr__
+            model: {"refId": "B", "type": "reduce", "expression": "A", "reducer": "last", "datasource": {"type": "__expr__", "uid": "__expr__"}}
+          - refId: C
+            datasourceUid: __expr__
+            model: {"refId": "C", "type": "threshold", "expression": "B", "datasource": {"type": "__expr__", "uid": "__expr__"}, "conditions": [{"evaluator": {"type": "gt", "params": [20]}}]}
+        noDataState: OK
+        execErrState: Error
+        for: 0s
+        labels: {severity: critical, origem: dnp3mon}
+        annotations: {summary: "Mais de 20 RTUs perderam comunicação em 5 minutos: provável problema de telecom, FEP ou rede."}
+        isPaused: false
+      - uid: dnp3-comando-falhou
+        title: "Comando DNP3 falhou"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: {from: 600, to: 0}
+            datasourceUid: clickhouse
+            model: {"refId": "A", "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse"}, "editorType": "sql", "format": 1, "queryType": "table", "rawSql": "SELECT rtu, toFloat64(count()) AS falhas FROM dnp3.commands WHERE ts > now() - INTERVAL 2 MINUTE AND result NOT IN ('success', 'sent_no_ack', 'select_only') GROUP BY rtu"}
+          - refId: B
+            datasourceUid: __expr__
+            model: {"refId": "B", "type": "reduce", "expression": "A", "reducer": "last", "datasource": {"type": "__expr__", "uid": "__expr__"}}
+          - refId: C
+            datasourceUid: __expr__
+            model: {"refId": "C", "type": "threshold", "expression": "B", "datasource": {"type": "__expr__", "uid": "__expr__"}, "conditions": [{"evaluator": {"type": "gt", "params": [0]}}]}
+        noDataState: OK
+        execErrState: Error
+        for: 0s
+        labels: {severity: critical, origem: dnp3mon}
+        annotations: {summary: "Comando falhou na RTU {{ $labels.rtu }}. Veja o dashboard DNP3 · Comandos."}
+        isPaused: false
+      - uid: dnp3-iin-critico
+        title: "Indicação IIN crítica"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: {from: 600, to: 0}
+            datasourceUid: clickhouse
+            model: {"refId": "A", "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse"}, "editorType": "sql", "format": 1, "queryType": "table", "rawSql": "SELECT rtu, detail AS iin, toFloat64(count()) AS n FROM dnp3.events WHERE ts > now() - INTERVAL 5 MINUTE AND event = 'iin_set' AND detail IN ('DEVICE_RESTART', 'DEVICE_TROUBLE', 'CONFIG_CORRUPT', 'EVENT_BUFFER_OVERFLOW') GROUP BY rtu, iin"}
+          - refId: B
+            datasourceUid: __expr__
+            model: {"refId": "B", "type": "reduce", "expression": "A", "reducer": "last", "datasource": {"type": "__expr__", "uid": "__expr__"}}
+          - refId: C
+            datasourceUid: __expr__
+            model: {"refId": "C", "type": "threshold", "expression": "B", "datasource": {"type": "__expr__", "uid": "__expr__"}, "conditions": [{"evaluator": {"type": "gt", "params": [0]}}]}
+        noDataState: OK
+        execErrState: Error
+        for: 0s
+        labels: {severity: warning, origem: dnp3mon}
+        annotations: {summary: "RTU {{ $labels.rtu }} sinalizou {{ $labels.iin }}."}
+        isPaused: false
+      - uid: dnp3-seguranca
+        title: "Alerta de segurança DNP3"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: {from: 600, to: 0}
+            datasourceUid: clickhouse
+            model: {"refId": "A", "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse"}, "editorType": "sql", "format": 1, "queryType": "table", "rawSql": "SELECT rtu, event AS tipo, any(master) AS origem, toFloat64(count()) AS n FROM dnp3.events WHERE ts > now() - INTERVAL 5 MINUTE AND category = 'security' GROUP BY rtu, tipo"}
+          - refId: B
+            datasourceUid: __expr__
+            model: {"refId": "B", "type": "reduce", "expression": "A", "reducer": "last", "datasource": {"type": "__expr__", "uid": "__expr__"}}
+          - refId: C
+            datasourceUid: __expr__
+            model: {"refId": "C", "type": "threshold", "expression": "B", "datasource": {"type": "__expr__", "uid": "__expr__"}, "conditions": [{"evaluator": {"type": "gt", "params": [0]}}]}
+        noDataState: OK
+        execErrState: Error
+        for: 0s
+        labels: {severity: critical, origem: dnp3mon}
+        annotations: {summary: "{{ $labels.tipo }} na RTU {{ $labels.rtu }} vindo de {{ $labels.origem }}."}
+        isPaused: false
+      - uid: dnp3-perda-captura
+        title: "Perda de pacotes no espelhamento"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: {from: 600, to: 0}
+            datasourceUid: clickhouse
+            model: {"refId": "A", "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse"}, "editorType": "sql", "format": 1, "queryType": "table", "rawSql": "SELECT toFloat64(sum(tcp_gaps)) AS lacunas FROM dnp3.rtu_stats_1m WHERE minute > now() - INTERVAL 5 MINUTE"}
+          - refId: B
+            datasourceUid: __expr__
+            model: {"refId": "B", "type": "reduce", "expression": "A", "reducer": "last", "datasource": {"type": "__expr__", "uid": "__expr__"}}
+          - refId: C
+            datasourceUid: __expr__
+            model: {"refId": "C", "type": "threshold", "expression": "B", "datasource": {"type": "__expr__", "uid": "__expr__"}, "conditions": [{"evaluator": {"type": "gt", "params": [50]}}]}
+        noDataState: OK
+        execErrState: Error
+        for: 5m
+        labels: {severity: warning, origem: dnp3mon}
+        annotations: {summary: "Lacunas de sequência TCP indicam que o SPAN/TAP está perdendo pacotes."}
+        isPaused: false
+      - uid: dnp3-chattering
+        title: "Ponto em chattering"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: {from: 600, to: 0}
+            datasourceUid: clickhouse
+            model: {"refId": "A", "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse"}, "editorType": "sql", "format": 1, "queryType": "table", "rawSql": "SELECT rtu, toFloat64(count()) AS n FROM dnp3.events WHERE ts > now() - INTERVAL 10 MINUTE AND event = 'chatter' GROUP BY rtu"}
+          - refId: B
+            datasourceUid: __expr__
+            model: {"refId": "B", "type": "reduce", "expression": "A", "reducer": "last", "datasource": {"type": "__expr__", "uid": "__expr__"}}
+          - refId: C
+            datasourceUid: __expr__
+            model: {"refId": "C", "type": "threshold", "expression": "B", "datasource": {"type": "__expr__", "uid": "__expr__"}, "conditions": [{"evaluator": {"type": "gt", "params": [0]}}]}
+        noDataState: OK
+        execErrState: Error
+        for: 0s
+        labels: {severity: warning, origem: dnp3mon}
+        annotations: {summary: "Chattering na RTU {{ $labels.rtu }}."}
+        isPaused: false

@@ -1,0 +1,3 @@
+rtu,name,substation,region,medium,vendor,model,notes
+10.20.3.10:20000,RL-ALIM-0102,SE Centro,Norte,lte,Fabricante X,Modelo Y,religador
+10.20.4.10:20000,CH-0441,SE Centro,Norte,radio,Fabricante Z,Modelo W,chave telecomandada

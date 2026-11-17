@@ -1,0 +1,74 @@
+# Monitor DNP3 do ADMS: dnp3mon (captura/decodificação) + ClickHouse + Grafana.
+# Uso: cp .env.example .env ; ajuste ; docker compose up -d
+name: dnp3mon
+
+services:
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.8
+    restart: unless-stopped
+    environment:
+      CLICKHOUSE_DB: dnp3
+      CLICKHOUSE_USER: dnp3mon
+      CLICKHOUSE_PASSWORD: ${CH_PASSWORD:?defina CH_PASSWORD no .env}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+      GRAFANA_CH_PASSWORD: ${GRAFANA_CH_PASSWORD:?defina GRAFANA_CH_PASSWORD no .env}
+    volumes:
+      - ${DATA_DIR:-./data}/clickhouse:/var/lib/clickhouse
+      - ./clickhouse/init:/docker-entrypoint-initdb.d:ro
+      - ./clickhouse/config.d/dnp3mon.xml:/etc/clickhouse-server/config.d/dnp3mon.xml:ro
+    ports:
+      - "127.0.0.1:8123:8123"   # somente local: o dnp3mon (rede host) grava por aqui
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8123/ping"]
+      interval: 10s
+      retries: 10
+
+  grafana:
+    image: grafana/grafana:11.3.0
+    restart: unless-stopped
+    depends_on: [clickhouse]
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?defina GRAFANA_ADMIN_PASSWORD no .env}
+      GF_PATHS_PLUGINS: /opt/grafana-plugins
+      GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS: ""
+      GF_DEFAULT_TIMEZONE: ${TZ_GRAFANA:-browser}
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/dnp3/01_visao_geral.json
+      GRAFANA_CH_PASSWORD: ${GRAFANA_CH_PASSWORD}
+      DNP3MON_PUBLIC_URL: ${DNP3MON_PUBLIC_URL:-http://localhost:8080}
+    volumes:
+      - ${DATA_DIR:-./data}/grafana:/var/lib/grafana
+      - ./grafana/plugins:/opt/grafana-plugins:ro
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards/dnp3:ro
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+
+  dnp3mon:
+    build: ..
+    image: dnp3mon:latest
+    restart: unless-stopped
+    depends_on: [clickhouse]
+    network_mode: host          # precisa enxergar a interface de espelhamento (SPAN/TAP)
+    cap_add: [NET_RAW, NET_ADMIN]
+    environment:
+      DNP3MON_IFACES: ${CAPTURE_IFACES:?defina CAPTURE_IFACES no .env}
+      DNP3MON_PORTS: ${DNP3_PORTS:-20000}
+      DNP3MON_MASTERS: ${AUTHORIZED_MASTERS:-}
+      DNP3MON_CH_URL: http://127.0.0.1:8123
+      DNP3MON_CH_USER: dnp3mon
+      DNP3MON_CH_PASS: ${CH_PASSWORD}
+      DNP3MON_HTTP: ${DNP3MON_HTTP:-:8080}
+      DNP3MON_PCAP_DIR: /data/pcap
+      DNP3MON_PCAP_DAYS: ${PCAP_DAYS:-30}
+      DNP3MON_PCAP_MAX_GB: ${PCAP_MAX_GB:-0}
+      DNP3MON_PCAP_PORTS: ${PCAP_EXTRA_PORTS:-2404}
+      DNP3MON_SPOOL: /data/spool
+      DNP3MON_RESP_TIMEOUT: ${RESP_TIMEOUT:-30s}
+      DNP3MON_OFFLINE_AFTER: ${OFFLINE_AFTER:-10m}
+    volumes:
+      - ${DATA_DIR:-./data}/dnp3mon:/data
+    command: ["live"]

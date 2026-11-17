@@ -1,0 +1,6 @@
+bin/
+*.pcap
+*.pcap.gz
+deploy/.env
+deploy/data/
+dist/

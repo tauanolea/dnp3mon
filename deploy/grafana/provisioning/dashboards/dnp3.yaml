@@ -1,0 +1,9 @@
+apiVersion: 1
+providers:
+  - name: dnp3
+    folder: DNP3
+    type: file
+    disableDeletion: true
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards/dnp3

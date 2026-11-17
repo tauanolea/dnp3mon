@@ -1,0 +1,7 @@
+bin
+deploy
+docs
+tools
+.git
+*.pcap
+*.pcap.gz

@@ -1,0 +1,23 @@
+# Exemplo de ponto de contato e política de notificação.
+# Renomeie para contato.yaml e ajuste (e-mail exige SMTP configurado no Grafana: GF_SMTP_*).
+apiVersion: 1
+contactPoints:
+  - orgId: 1
+    name: operacao-scada
+    receivers:
+      - uid: operacao-email
+        type: email
+        settings:
+          addresses: "scada@empresa.com.br"
+          singleEmail: true
+      # - uid: operacao-webhook
+      #   type: webhook
+      #   settings:
+      #     url: "http://itsm.local/hook/dnp3"
+policies:
+  - orgId: 1
+    receiver: operacao-scada
+    group_by: ["alertname"]       # agrupa: uma notificação por tipo de alerta, não uma por RTU
+    group_wait: 30s
+    group_interval: 5m
+    repeat_interval: 4h

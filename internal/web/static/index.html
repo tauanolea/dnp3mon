@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DNP3 Monitor ao vivo</title>
+<style>
+:root{--bg:#f6f7f9;--panel:#fff;--fg:#1d2330;--muted:#6b7385;--line:#e3e6ec;--accent:#2563eb;--ok:#15803d;--warn:#b45309;--crit:#b91c1c;--m2o:#1d4ed8;--o2m:#047857;--sel:#eef4ff}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1218;--panel:#161a22;--fg:#e6e9ef;--muted:#8b93a6;--line:#262c38;--accent:#60a5fa;--ok:#4ade80;--warn:#fbbf24;--crit:#f87171;--m2o:#93c5fd;--o2m:#6ee7b7;--sel:#1c2433}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:13px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+header{display:flex;gap:16px;align-items:center;padding:10px 16px;border-bottom:1px solid var(--line);background:var(--panel);position:sticky;top:0;z-index:2;flex-wrap:wrap}
+h1{font-size:15px;margin:0;font-weight:600}
+.tabs button{border:0;background:none;color:var(--muted);padding:6px 10px;cursor:pointer;font:inherit;border-bottom:2px solid transparent}
+.tabs button.on{color:var(--fg);border-color:var(--accent)}
+.bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:8px 16px;border-bottom:1px solid var(--line);background:var(--panel)}
+input,select{background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:5px 8px;font:inherit}
+button.b{background:var(--accent);color:#fff;border:0;border-radius:6px;padding:6px 10px;cursor:pointer;font:inherit}
+button.g{background:none;color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:5px 10px;cursor:pointer;font:inherit}
+label{color:var(--muted);display:flex;gap:4px;align-items:center}
+.stat{color:var(--muted);margin-left:auto}
+main{padding:0 0 40px}
+table{width:100%;border-collapse:collapse}
+th,td{padding:4px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top;white-space:nowrap}
+th{position:sticky;top:0;background:var(--panel);color:var(--muted);font-weight:500;font-size:12px}
+td.sum{white-space:normal;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;word-break:break-word}
+tr.row{cursor:pointer}tr.row:hover{background:var(--sel)}
+.M2O{color:var(--m2o)}.O2M{color:var(--o2m)}
+.sev-warn{color:var(--warn)}.sev-crit{color:var(--crit);font-weight:600}.sev-info{color:var(--muted)}
+.pill{display:inline-block;padding:0 6px;border-radius:9px;font-size:11px;border:1px solid var(--line)}
+.online{color:var(--ok)}.offline{color:var(--crit);font-weight:600}.unknown{color:var(--muted)}
+pre{margin:0;padding:8px 12px;background:var(--bg);border-left:3px solid var(--accent);white-space:pre-wrap;word-break:break-all;font-size:12px}
+.wrap{overflow-x:auto}
+.hide{display:none}
+#detail{padding:12px 16px}
+.kv{display:grid;grid-template-columns:max-content 1fr;gap:2px 12px;margin-bottom:12px}
+.kv b{color:var(--muted);font-weight:500}
+</style>
+</head>
+<body>
+<header>
+  <h1>DNP3 Monitor</h1>
+  <div class="tabs"><button id="t-live" class="on">Tráfego ao vivo</button><button id="t-rtus">RTUs</button></div>
+  <span class="stat" id="stat">desconectado</span>
+</header>
+
+<section id="v-live">
+  <div class="bar">
+    <input id="f-rtu" placeholder="RTU (ip ou ip:porta)" size="22">
+    <input id="f-q" placeholder="texto (ex.: SELECT, IIN, g12)" size="24">
+    <label><input type="checkbox" id="ty-msg" checked>mensagens</label>
+    <label><input type="checkbox" id="ty-event" checked>eventos</label>
+    <label><input type="checkbox" id="ty-cmd" checked>comandos</label>
+    <label><input type="checkbox" id="ty-point">pontos</label>
+    <label><input type="checkbox" id="hide-link">ocultar link status</label>
+    <button class="b" id="apply">Aplicar</button>
+    <button class="g" id="pause">Pausar</button>
+    <button class="g" id="clear">Limpar</button>
+    <button class="g" id="dl">PCAP 15 min</button>
+  </div>
+  <main class="wrap"><table><thead><tr><th>hora</th><th>RTU</th><th>sentido</th><th>tipo</th><th>resp ms</th><th>resumo</th></tr></thead><tbody id="rows"></tbody></table></main>
+</section>
+
+<section id="v-rtus" class="hide">
+  <div class="bar"><input id="f-rtu2" placeholder="filtrar RTU" size="22"><select id="f-state"><option value="">todos os estados</option><option>online</option><option>offline</option><option>unknown</option></select><span class="stat" id="rstat"></span></div>
+  <main class="wrap"><table><thead><tr><th>RTU</th><th>estado</th><th>end. DNP3</th><th>master ativo</th><th>último quadro válido</th><th>últ. integridade</th><th>últ. resp ms</th><th>IIN</th><th>pontos</th><th></th></tr></thead><tbody id="rtus"></tbody></table></main>
+  <div id="detail"></div>
+</section>
+
+<script>
+const $=s=>document.querySelector(s);
+let es=null,paused=false,buf=[],count=0;
+const MAX=3000;
+function fmtT(s){return s?s.replace('T',' ').slice(11,23):''}
+function esc(s){return String(s??'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}
+function connect(){
+  if(es)es.close();
+  const types=['msg','event','cmd','point'].filter(t=>$('#ty-'+t).checked).join(',');
+  const u=new URLSearchParams({rtu:$('#f-rtu').value.trim(),q:$('#f-q').value.trim(),types});
+  es=new EventSource('api/live?'+u);
+  es.onopen=()=>$('#stat').textContent='conectado';
+  es.onerror=()=>$('#stat').textContent='reconectando…';
+  es.onmessage=ev=>{const o=JSON.parse(ev.data);if(paused){buf.push(o);return}add(o)};
+}
+function add(o){
+  const d=o.data;let tr=document.createElement('tr');tr.className='row';
+  let cells;
+  if(o.type==='drops'){cells=['','','','<span class="sev-warn">descartes</span>','',d+' mensagens descartadas (cliente lento)']}
+  else if(o.type==='msg'){
+    if($('#hide-link').checked&&d.layer==='link')return;
+    cells=[fmtT(d.ts),esc(d.rtu),`<span class="${d.dir}">${d.dir==='M2O'?'master→RTU':'RTU→master'}</span>`,esc(d.kind)+(d.retry?' <span class="pill sev-warn">retry</span>':'')+(d.late?' <span class="pill sev-warn">atrasada</span>':''),d.resp_ms!=null?d.resp_ms.toFixed(0):'',esc(d.summary)+(d.err?` <span class="sev-crit">${esc(d.err)}</span>`:'')];
+  }else if(o.type==='event'){
+    cells=[fmtT(d.ts),esc(d.rtu),'',`<span class="sev-${d.severity}">${esc(d.event)}</span>`,'',esc(d.detail)+(d.value?' ('+d.value+')':'')];
+  }else if(o.type==='cmd'){
+    const bad=!['success','sent_no_ack'].includes(d.result);
+    cells=[fmtT(d.ts),esc(d.rtu),'',`<span class="${bad?'sev-crit':'online'}">comando ${esc(d.result)}</span>`,d.duration_ms!=null?d.duration_ms.toFixed(0):'',`${esc(d.mode)} ${esc(d.type)}:${d.idx} ${esc(d.op)} status=${esc(d.status||d.select_status)} ${d.feedback_point?'retorno '+esc(d.feedback_point)+' em '+d.feedback_ms.toFixed(0)+' ms':''}`];
+  }else if(o.type==='point'){
+    cells=[fmtT(d.ts),esc(d.rtu),'',esc(d.src),'',`${esc(d.type)}:${d.idx} = ${d.value} flags=0x${d.flags.toString(16)} ${d.event_ts?'t='+esc(d.event_ts):''}`];
+  }else return;
+  tr.innerHTML=cells.map((c,i)=>`<td${i===5?' class="sum"':''}>${c}</td>`).join('');
+  tr.onclick=()=>{const n=tr.nextSibling;if(n&&n.classList&&n.classList.contains('det')){n.remove();return}
+    const x=document.createElement('tr');x.className='det';x.innerHTML=`<td colspan="6"><pre>${esc(JSON.stringify(d,null,2))}</pre></td>`;tr.after(x)};
+  const tb=$('#rows');tb.prepend(tr);count++;
+  while(tb.rows.length>MAX)tb.deleteRow(-1);
+}
+$('#apply').onclick=connect;
+$('#pause').onclick=()=>{paused=!paused;$('#pause').textContent=paused?'Retomar ('+buf.length+')':'Pausar';if(!paused){buf.forEach(add);buf=[]}};
+$('#clear').onclick=()=>{$('#rows').innerHTML=''};
+$('#dl').onclick=()=>{const r=$('#f-rtu').value.trim();if(!r){alert('Informe a RTU (ip:porta)');return}location.href='api/pcap?'+new URLSearchParams({rtu:r,from:Date.now()-900000,to:Date.now()})};
+['#f-rtu','#f-q'].forEach(s=>$(s).addEventListener('keydown',e=>{if(e.key==='Enter')connect()}));
+
+function tab(n){['live','rtus'].forEach(t=>{$('#t-'+t).classList.toggle('on',t===n);$('#v-'+t).classList.toggle('hide',t!==n)});if(n==='rtus')loadRTUs()}
+$('#t-live').onclick=()=>tab('live');$('#t-rtus').onclick=()=>tab('rtus');
+function ago(t){if(!t||t.startsWith('0001'))return '—';const s=(Date.now()-Date.parse(t))/1000;if(s<90)return Math.round(s)+' s';if(s<5400)return Math.round(s/60)+' min';return Math.round(s/3600)+' h'}
+async function loadRTUs(){
+  if($('#v-rtus').classList.contains('hide'))return;
+  const l=await (await fetch('api/rtus')).json();
+  const f=$('#f-rtu2').value.trim(),st=$('#f-state').value;
+  const c={online:0,offline:0,unknown:0};l.forEach(r=>c[r.state]++);
+  $('#rstat').textContent=`${l.length} RTUs · ${c.online} online · ${c.offline} offline · ${c.unknown} sem dados`;
+  $('#rtus').innerHTML=l.filter(r=>(!f||r.rtu.includes(f))&&(!st||r.state===st)).map(r=>`<tr class="row" data-k="${esc(r.rtu)}"><td>${esc(r.rtu)}</td><td class="${r.state}">${r.state}${r.state==='offline'?' há '+ago(r.offline_since):''}</td><td>${r.link_addr>=0?r.link_addr:''}</td><td>${esc(r.master)}</td><td>${ago(r.last_valid)}</td><td>${ago(r.last_integrity_ok)}</td><td>${r.last_resp_ms?r.last_resp_ms.toFixed(0):''}</td><td>${(r.iin||[]).map(x=>`<span class="pill">${x}</span>`).join(' ')}</td><td>${r.points}</td><td><a href="#" data-live="${esc(r.rtu)}">ao vivo</a></td></tr>`).join('');
+}
+$('#rtus').onclick=async e=>{
+  const a=e.target.closest('[data-live]');if(a){e.preventDefault();$('#f-rtu').value=a.dataset.live;tab('live');connect();return}
+  const tr=e.target.closest('tr');if(!tr)return;
+  const d=await (await fetch('api/rtu?key='+encodeURIComponent(tr.dataset.k))).json();
+  $('#detail').innerHTML=`<h3>${esc(d.rtu.rtu)}</h3><div class="kv">${Object.entries(d.rtu).map(([k,v])=>`<b>${k}</b><span>${esc(Array.isArray(v)?v.join(', '):v)}</span>`).join('')}</div>
+  <table><thead><tr><th>tipo</th><th>índice</th><th>valor</th><th>qualidade</th><th>atualizado</th><th>mudanças recentes</th></tr></thead><tbody>${d.points.map(p=>`<tr><td>${p.type}</td><td>${p.idx}</td><td>${p.value}</td><td>${p.flags.join(', ')}</td><td>${ago(p.ts)}</td><td>${p.recent_changes}</td></tr>`).join('')}</tbody></table>`;
+  $('#detail').scrollIntoView({behavior:'smooth'});
+};
+$('#f-rtu2').oninput=loadRTUs;$('#f-state').onchange=loadRTUs;
+setInterval(loadRTUs,5000);
+const p=new URLSearchParams(location.search);if(p.get('rtu'))$('#f-rtu').value=p.get('rtu');
+connect();
+</script>
+</body>
+</html>
