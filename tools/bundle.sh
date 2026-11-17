@@ -8,7 +8,7 @@ VER=$(date +%Y%m%d-%H%M)
 OUT=dist/dnp3mon-bundle-$VER
 mkdir -p "$OUT"
 echo "== build da imagem dnp3mon"
-docker build -t dnp3mon:latest .
+docker build ${DOCKER_BUILD_ARGS:-} -t dnp3mon:latest .
 echo "== salvando imagens"
 docker pull clickhouse/clickhouse-server:24.8 >/dev/null 2>&1 || true
 docker pull grafana/grafana:11.3.0 >/dev/null 2>&1 || true
