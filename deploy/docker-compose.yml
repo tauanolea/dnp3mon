@@ -50,6 +50,7 @@ services:
   dnp3mon:
     build: ..
     image: dnp3mon:latest
+    pull_policy: build          # imagem local: construída a partir do Dockerfile, não baixada
     restart: unless-stopped
     depends_on: [clickhouse]
     network_mode: host          # precisa enxergar a interface de espelhamento (SPAN/TAP)
