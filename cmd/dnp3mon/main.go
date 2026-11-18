@@ -110,10 +110,16 @@ func main() {
 		if m == "" {
 			continue
 		}
-		if !strings.Contains(m, "/") {
-			m += "/32"
+		var pfx netip.Prefix
+		var err error
+		if strings.Contains(m, "/") {
+			pfx, err = netip.ParsePrefix(m)
+		} else {
+			var a netip.Addr
+			if a, err = netip.ParseAddr(m); err == nil {
+				pfx = netip.PrefixFrom(a, a.BitLen()) // IP único (/32 ou /128)
+			}
 		}
-		pfx, err := netip.ParsePrefix(m)
 		if err != nil {
 			log.Fatalf("master inválido %q: %v", m, err)
 		}
