@@ -75,7 +75,7 @@ Teste: 4.000 RTUs, 3 horas, cerca de 196 kbit/s de DNP3. Os números abaixo fora
 
 ## Instalação na VM
 
-1. Pré-requisitos: Linux com Docker e o plugin compose. A interface de captura deve estar **sem IP**; o dnp3mon a coloca em modo promíscuo.
+1. Pré-requisitos: Linux com Docker e o plugin compose. Em Ubuntu/Debian sem Docker: `sudo ./tools/install-docker.sh`. A interface de captura deve estar **sem IP**; o dnp3mon a coloca em modo promíscuo.
 2. Copie o projeto. Se a VM não tiver internet, gere o pacote aqui com `tools/bundle.sh`; ele leva as imagens e o plugin do Grafana.
 3. Configure:
    ```bash
