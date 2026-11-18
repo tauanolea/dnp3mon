@@ -81,7 +81,7 @@ Teste: 4.000 RTUs, 3 horas, cerca de 196 kbit/s de DNP3. Os números abaixo fora
    ```bash
    cd dnp3mon/deploy
    cp .env.example .env      # interfaces, senhas, DATA_DIR, IPs dos FEPs
-   ./setup.sh                # cria os diretórios e acerta as permissões
+   sudo ./setup.sh           # cria os diretórios e acerta as permissões (precisa de root)
    docker compose up -d
    ```
 4. Acesse:

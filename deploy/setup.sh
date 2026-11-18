@@ -1,6 +1,11 @@
 #!/bin/bash
 # Prepara os diretórios de dados conforme o .env (rodar uma vez, como root).
 set -euo pipefail
+if [ "$(id -u)" -ne 0 ]; then
+  echo "Este script cria diretórios no sistema e ajusta permissões: rode com sudo:"
+  echo "  sudo ./setup.sh"
+  exit 1
+fi
 cd "$(dirname "$0")"
 [ -f .env ] || { echo "crie o .env a partir do .env.example"; exit 1; }
 set -a; . ./.env; set +a
